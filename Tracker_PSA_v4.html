@@ -550,6 +550,7 @@ var supabase=function(e){function t(e,t){var r={};for(var s in e)Object.prototyp
       <select class="fsel" id="fs" onchange="doFilter()"><option value="">Toate statusurile</option><option value="PENDING">Pending</option><option value="FINALIZAT">Finalizat</option></select>
       <select class="fsel" id="fa" onchange="doFilter()"><option value="">Toți avocații</option><option value="M">M</option><option value="D">D</option><option value="M+D">M+D</option></select>
       <select class="fsel" id="fd" onchange="doFilter()"><option value="">Toate</option><option value="cu">Cu nr. dosar</option><option value="fara">Fără nr. dosar</option></select>
+      <select class="fsel" id="fsort" onchange="setSortClienti(this.value)"><option value="nou" selected>↓ Cel mai nou</option><option value="alfa">A→Z Alfabetic</option></select>
       <span style="font-size:11px;color:var(--g400);margin-left:auto;" id="rc"></span>
     </div>
     <div class="twrap"><table style="min-width:900px;">
@@ -969,7 +970,7 @@ var supabase=function(e){function t(e,t){var r={};for(var s in e)Object.prototyp
   <div class="fgrid" style="margin-bottom:14px;">
     <div class="frow">
       <label>Nr. Factură</label>
-      <input id="fact-nr" placeholder="PSA-2025-001" style="font-family:'DM Mono',monospace;font-weight:700;font-size:13px;">
+      <input id="fact-nr" placeholder="FPA675" style="font-family:'DM Mono',monospace;font-weight:700;font-size:13px;">
     </div>
     <div class="frow">
       <label>Data emiterii</label>
@@ -1732,16 +1733,28 @@ function applyRoleFilter(){
 // ─── STATE ────────────────────────────────────────────────────────────────────
 const DB_KEY = "psa_tracker_v1";
 let rows=[], frows=[], calEvts=0, editId=null, calRow=null, rapRow=null, finId=null;
+let sortClienti = 'nou'; // 'nou' = cel mai nou primul | 'alfa' = alfabetic
 
 const emptyFin=()=>({cnp:"",tel:"",email:"",adr:"",tva:0,platit:"neplatit",obs:"",activitati:[],retro_suma:0,retro_data:"",retro_motiv:""});
 const RAW_ROWS=()=>RAW.map((r,i)=>({...r,id:i,termene:[],isNew:false,fin:emptyFin()}));
 
 function doSort(){
-  rows.sort((a,b)=>{
-    const ka=(a.c||"").toUpperCase().replace(/[ĂÂÎȘŞȚŢ]/g,m=>({Ă:"A",Â:"A",Î:"I",Ș:"S",Ş:"S",Ț:"T",Ţ:"T"})[m]||m);
-    const kb=(b.c||"").toUpperCase().replace(/[ĂÂÎȘŞȚŢ]/g,m=>({Ă:"A",Â:"A",Î:"I",Ș:"S",Ş:"S",Ț:"T",Ţ:"T"})[m]||m);
-    return ka.localeCompare(kb,"ro");
-  });
+  if(sortClienti === 'alfa'){
+    rows.sort((a,b)=>{
+      const ka=(a.c||"").toUpperCase().replace(/[ĂÂÎȘŞȚŢ]/g,m=>({Ă:"A",Â:"A",Î:"I",Ș:"S",Ş:"S",Ț:"T",Ţ:"T"})[m]||m);
+      const kb=(b.c||"").toUpperCase().replace(/[ĂÂÎȘŞȚŢ]/g,m=>({Ă:"A",Â:"A",Î:"I",Ș:"S",Ş:"S",Ț:"T",Ţ:"T"})[m]||m);
+      return ka.localeCompare(kb,"ro");
+    });
+  } else {
+    // 'nou' — cel mai recent adăugat primul (id descrescător)
+    rows.sort((a,b)=>(b.id||0)-(a.id||0));
+  }
+}
+
+function setSortClienti(val){
+  sortClienti = val;
+  doSort();
+  applyRoleFilter();
 }
 
 function buildSaveObj(){
@@ -3012,14 +3025,13 @@ let facturiFurnizori = [];
 let chitEditId = null;
 
 function nextFactNr() {
-  const yr = new Date().getFullYear();
-  if (!facturi.length) return `PSA-${yr}-001`;
   const nums = facturi.map(f => {
-    const m = (f.nr || '').match(/PSA-\d{4}-(\d+)/);
+    const m = (f.nr || '').match(/FPA(\d+)/i);
     return m ? parseInt(m[1]) : 0;
   });
-  const next = Math.max(...nums) + 1;
-  return `PSA-${yr}-${String(next).padStart(3,'0')}`;
+  const maxNum = nums.length ? Math.max(...nums) : 0;
+  const next = Math.max(maxNum + 1, 675);
+  return `FPA${next}`;
 }
 
 function openFactura(id) {
