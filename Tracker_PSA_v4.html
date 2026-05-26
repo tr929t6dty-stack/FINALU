@@ -413,11 +413,7 @@ var supabase=function(e){function t(e,t){var r={};for(var s in e)Object.prototyp
     <div class="sc gr"><div class="sci">✅</div><div><div class="scv" id="sf">0</div><div class="scl">Finalizate</div></div></div>
     <div class="sc pu"><div class="sci">🔗</div><div><div class="scv" id="sd">0</div><div class="scl">Cu nr. dosar</div></div></div>
     <div class="sc re"><div class="sci">📅</div><div><div class="scv" id="scc">0</div><div class="scl">Calendar</div></div></div>
-    <div class="sc em" style="cursor:pointer;user-select:none;" onclick="openRapoarteIncasari()" title="Click pentru rapoarte încasări">
-      <div class="sci">📊</div>
-      <div><div class="scv">Rapoarte</div><div class="scl">Încasări</div></div>
-      <span id="stot" style="display:none">0</span>
-    </div>
+    <div class="sc em"><div class="sci">💰</div><div><div class="scv" id="stot">0</div><div class="scl">Total onorarii RON</div></div></div>
     <div class="sc" style="border-left-color:#8E44AD;"><div class="sci">🧾</div><div><div class="scv" id="s-fact">0</div><div class="scl">Facturi emise</div></div></div>
     <div class="sc" style="border-left-color:#E67E22;"><div class="sci">⏳</div><div><div class="scv" id="s-neinc">0</div><div class="scl">Neîncasate RON</div></div></div>
     <div class="sc" style="border-left-color:#16A085;"><div class="sci">🪙</div><div><div class="scv" id="s-chit">0</div><div class="scl">Chitanțe emise</div></div></div>
@@ -434,6 +430,7 @@ var supabase=function(e){function t(e,t){var r={};for(var s in e)Object.prototyp
     <button class="tab" onclick="switchTab('fisc',this)">🏛️ Declarație FISC</button>
     <button class="tab" onclick="switchTab('furnizori',this)">📦 Facturi Furnizori</button>
     <button class="tab" onclick="switchTab('colaboratori',this)">🤝 Colaboratori</button>
+    <button class="tab" onclick="openRapoarteIncasari()" style="border-left-color:#16A085;color:#16A085;">📊 Rapoarte Încasări</button>
   </div>
 
 
