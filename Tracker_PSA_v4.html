@@ -430,7 +430,7 @@ var supabase=function(e){function t(e,t){var r={};for(var s in e)Object.prototyp
     <button class="tab" onclick="switchTab('fisc',this)">🏛️ Declarație FISC</button>
     <button class="tab" onclick="switchTab('furnizori',this)">📦 Facturi Furnizori</button>
     <button class="tab" onclick="switchTab('colaboratori',this)">🤝 Colaboratori</button>
-    <button class="tab" onclick="openRapoarteIncasari()" style="border-left-color:#16A085;color:#16A085;">📊 Rapoarte Încasări</button>
+    <button class="tab" onclick="openRapoarteIncasari()" style="border-left-color:#16A085;">📊 Rapoarte Încasări</button>
   </div>
 
 
@@ -551,6 +551,7 @@ var supabase=function(e){function t(e,t){var r={};for(var s in e)Object.prototyp
       <select class="fsel" id="fs" onchange="doFilter()"><option value="">Toate statusurile</option><option value="PENDING">Pending</option><option value="FINALIZAT">Finalizat</option></select>
       <select class="fsel" id="fa" onchange="doFilter()"><option value="">Toți avocații</option><option value="M">M</option><option value="D">D</option><option value="M+D">M+D</option></select>
       <select class="fsel" id="fd" onchange="doFilter()"><option value="">Toate</option><option value="cu">Cu nr. dosar</option><option value="fara">Fără nr. dosar</option></select>
+      <select class="fsel" id="fsort" onchange="setSortClienti(this.value)"><option value="nou" selected>↓ Cel mai nou</option><option value="alfa">A→Z Alfabetic</option></select>
       <span style="font-size:11px;color:var(--g400);margin-left:auto;" id="rc"></span>
     </div>
     <div class="twrap"><table style="min-width:900px;">
@@ -970,7 +971,7 @@ var supabase=function(e){function t(e,t){var r={};for(var s in e)Object.prototyp
   <div class="fgrid" style="margin-bottom:14px;">
     <div class="frow">
       <label>Nr. Factură</label>
-      <input id="fact-nr" placeholder="PSA-2025-001" style="font-family:'DM Mono',monospace;font-weight:700;font-size:13px;">
+      <input id="fact-nr" placeholder="FPA675" style="font-family:'DM Mono',monospace;font-weight:700;font-size:13px;">
     </div>
     <div class="frow">
       <label>Data emiterii</label>
@@ -1733,16 +1734,28 @@ function applyRoleFilter(){
 // ─── STATE ────────────────────────────────────────────────────────────────────
 const DB_KEY = "psa_tracker_v1";
 let rows=[], frows=[], calEvts=0, editId=null, calRow=null, rapRow=null, finId=null;
+let sortClienti = 'nou'; // 'nou' = cel mai nou primul | 'alfa' = alfabetic
 
 const emptyFin=()=>({cnp:"",tel:"",email:"",adr:"",tva:0,platit:"neplatit",obs:"",activitati:[],retro_suma:0,retro_data:"",retro_motiv:""});
 const RAW_ROWS=()=>RAW.map((r,i)=>({...r,id:i,termene:[],isNew:false,fin:emptyFin()}));
 
 function doSort(){
-  rows.sort((a,b)=>{
-    const ka=(a.c||"").toUpperCase().replace(/[ĂÂÎȘŞȚŢ]/g,m=>({Ă:"A",Â:"A",Î:"I",Ș:"S",Ş:"S",Ț:"T",Ţ:"T"})[m]||m);
-    const kb=(b.c||"").toUpperCase().replace(/[ĂÂÎȘŞȚŢ]/g,m=>({Ă:"A",Â:"A",Î:"I",Ș:"S",Ş:"S",Ț:"T",Ţ:"T"})[m]||m);
-    return ka.localeCompare(kb,"ro");
-  });
+  if(sortClienti === 'alfa'){
+    rows.sort((a,b)=>{
+      const ka=(a.c||"").toUpperCase().replace(/[ĂÂÎȘŞȚŢ]/g,m=>({Ă:"A",Â:"A",Î:"I",Ș:"S",Ş:"S",Ț:"T",Ţ:"T"})[m]||m);
+      const kb=(b.c||"").toUpperCase().replace(/[ĂÂÎȘŞȚŢ]/g,m=>({Ă:"A",Â:"A",Î:"I",Ș:"S",Ş:"S",Ț:"T",Ţ:"T"})[m]||m);
+      return ka.localeCompare(kb,"ro");
+    });
+  } else {
+    // 'nou' — cel mai recent adăugat primul (id descrescător)
+    rows.sort((a,b)=>(b.id||0)-(a.id||0));
+  }
+}
+
+function setSortClienti(val){
+  sortClienti = val;
+  doSort();
+  applyRoleFilter();
 }
 
 function buildSaveObj(){
@@ -3013,14 +3026,13 @@ let facturiFurnizori = [];
 let chitEditId = null;
 
 function nextFactNr() {
-  const yr = new Date().getFullYear();
-  if (!facturi.length) return `PSA-${yr}-001`;
   const nums = facturi.map(f => {
-    const m = (f.nr || '').match(/PSA-\d{4}-(\d+)/);
+    const m = (f.nr || '').match(/FPA(\d+)/i);
     return m ? parseInt(m[1]) : 0;
   });
-  const next = Math.max(...nums) + 1;
-  return `PSA-${yr}-${String(next).padStart(3,'0')}`;
+  const maxNum = nums.length ? Math.max(...nums) : 0;
+  const next = Math.max(maxNum + 1, 675);
+  return `FPA${next}`;
 }
 
 function openFactura(id) {
@@ -7438,231 +7450,69 @@ setTimeout(function() { try { checkDeadlineAlerts(); } catch(e) {} }, 4000);
 <script>
 // ── RAPOARTE ÎNCASĂRI ────────────────────────────────────────────────────────
 (function() {
-
-var raportTab = 'saptamanal';
-var raportWeekOffset = 0;   // 0 = săptămâna curentă, -1 = săptămâna trecută, etc.
-var raportLunarYear = new Date().getFullYear();
-var raportAnualStart = new Date().getFullYear() - 4;
-
-function fmtR(n) {
-  if (!n || n === 0) return '0,00';
-  return n.toLocaleString('ro-RO', {minimumFractionDigits: 2, maximumFractionDigits: 2});
-}
-
-function getMonday(d) {
-  var dt = new Date(d);
-  var day = dt.getDay();
-  var diff = (day === 0) ? -6 : 1 - day;
-  dt.setDate(dt.getDate() + diff);
-  dt.setHours(0,0,0,0);
-  return dt;
-}
-
-function fmtDate(d) {
-  return d.getDate().toString().padStart(2,'0') + '.' +
-         (d.getMonth()+1).toString().padStart(2,'0') + '.' +
-         d.getFullYear();
-}
-
-function fmtMonth(m) {
-  var luni = ['Ianuarie','Februarie','Martie','Aprilie','Mai','Iunie',
-               'Iulie','August','Septembrie','Octombrie','Noiembrie','Decembrie'];
-  return luni[m];
-}
-
-window.openRapoarteIncasari = function() {
-  raportWeekOffset = 0;
-  document.getElementById('m-rapoarte').classList.add('on');
-  switchRaportTab(raportTab);
+var raportTab='saptamanal',raportWeekOffset=0,raportLunarYear=new Date().getFullYear();
+function fmtR(n){return(n||0).toLocaleString('ro-RO',{minimumFractionDigits:2,maximumFractionDigits:2});}
+function getMonday(d){var dt=new Date(d),day=dt.getDay(),diff=(day===0)?-6:1-day;dt.setDate(dt.getDate()+diff);dt.setHours(0,0,0,0);return dt;}
+function fmtD(d){return d.getDate().toString().padStart(2,'0')+'.'+(d.getMonth()+1).toString().padStart(2,'0')+'.'+d.getFullYear();}
+function ch(){return(typeof chitante!=='undefined')?chitante:[];}
+window.openRapoarteIncasari=function(){raportWeekOffset=0;document.getElementById('m-rapoarte').classList.add('on');switchRaportTab(raportTab);};
+window.closeRapoarteIncasari=function(){document.getElementById('m-rapoarte').classList.remove('on');};
+window.switchRaportTab=function(tip){
+  raportTab=tip;
+  ['saptamanal','lunar','anual'].forEach(function(t){document.getElementById('rtab-'+t).classList.toggle('active',t===tip);});
+  ['saptamanal','lunar','anual'].forEach(function(t){document.getElementById('r-'+t).style.display=t===tip?'':'none';});
+  if(tip==='saptamanal')renderS();if(tip==='lunar')renderL();if(tip==='anual')renderA();
 };
-
-window.closeRapoarteIncasari = function() {
-  document.getElementById('m-rapoarte').classList.remove('on');
-};
-
-window.switchRaportTab = function(tip) {
-  raportTab = tip;
-  ['saptamanal','lunar','anual'].forEach(function(t) {
-    document.getElementById('rtab-'+t).classList.toggle('active', t === tip);
-  });
-  document.getElementById('r-saptamanal').style.display = tip === 'saptamanal' ? '' : 'none';
-  document.getElementById('r-lunar').style.display = tip === 'lunar' ? '' : 'none';
-  document.getElementById('r-anual').style.display = tip === 'anual' ? '' : 'none';
-  if (tip === 'saptamanal') renderSaptamanal();
-  if (tip === 'lunar') renderLunar();
-  if (tip === 'anual') renderAnual();
-};
-
-window.raportWeekNav = function(dir) {
-  raportWeekOffset += dir;
-  renderSaptamanal();
-};
-
-window.raportLunarYearNav = function(dir) {
-  raportLunarYear += dir;
-  renderLunar();
-};
-
-function getChitante() {
-  return (typeof chitante !== 'undefined') ? chitante : [];
-}
-
-function renderSaptamanal() {
-  var monday = getMonday(new Date());
-  monday.setDate(monday.getDate() + raportWeekOffset * 7);
-  var sunday = new Date(monday);
-  sunday.setDate(monday.getDate() + 6);
-  sunday.setHours(23,59,59,999);
-
-  document.getElementById('r-sapt-period').textContent =
-    'Săptămâna ' + fmtDate(monday) + ' – ' + fmtDate(sunday);
-
-  var zile = [];
-  for (var i = 0; i < 7; i++) {
-    var d = new Date(monday);
-    d.setDate(monday.getDate() + i);
-    zile.push(d);
+window.raportWeekNav=function(d){raportWeekOffset+=d;renderS();};
+window.raportLunarYearNav=function(d){raportLunarYear+=d;renderL();};
+function renderS(){
+  var mon=getMonday(new Date());mon.setDate(mon.getDate()+raportWeekOffset*7);
+  var sun=new Date(mon);sun.setDate(mon.getDate()+6);sun.setHours(23,59,59,999);
+  document.getElementById('r-sapt-period').textContent='Săptămâna '+fmtD(mon)+' – '+fmtD(sun);
+  var zile=['Lun','Mar','Mie','Joi','Vin','Sâm','Dum'],rows=[],total=0,chitante=ch();
+  for(var i=0;i<7;i++){
+    var zi=new Date(mon);zi.setDate(mon.getDate()+i);
+    var ds=zi.toISOString().split('T')[0];
+    var cz=chitante.filter(function(c){return c.data===ds;});
+    var s=cz.reduce(function(a,c){return a+(parseFloat(c.suma)||0);},0);total+=s;
+    var det=cz.map(function(c){return'<span style="display:block;font-size:11px;color:#555;">'+(c.client||'—')+' · '+fmtR(parseFloat(c.suma)||0)+' RON'+(c.nr?' · Chit.'+c.nr:'')+' </span>';}).join('');
+    rows.push('<tr><td style="font-weight:bold;color:#1F3864;">'+zile[i]+' '+fmtD(zi)+'</td><td>'+(cz.length?det:'<span style="color:#aaa;">—</span>')+'</td><td style="text-align:right;font-weight:bold;color:'+(s>0?'#16A085':'#aaa')+';">'+(s>0?fmtR(s)+' RON':'—')+'</td></tr>');
   }
-  var numezile = ['Lun','Mar','Mie','Joi','Vin','Sâm','Dum'];
-
-  var ch = getChitante();
-  var rows = [];
-  var total = 0;
-
-  zile.forEach(function(zi, idx) {
-    var dataStr = zi.toISOString().split('T')[0];
-    var chitAzi = ch.filter(function(c) { return c.data === dataStr; });
-    var sumaZi = chitAzi.reduce(function(s, c) { return s + (parseFloat(c.suma)||0); }, 0);
-    total += sumaZi;
-
-    var detalii = chitAzi.map(function(c) {
-      return '<span style="display:block;font-size:11px;color:#555;">' +
-        (c.client||'—') + ' · ' + fmtR(parseFloat(c.suma)||0) + ' RON' +
-        (c.nr ? ' · Chit. ' + c.nr : '') +
-        '</span>';
-    }).join('');
-
-    rows.push('<tr>' +
-      '<td style="font-weight:bold;color:#1F3864;">' + numezile[idx] + ' ' + fmtDate(zi) + '</td>' +
-      '<td>' + (chitAzi.length > 0 ? detalii : '<span style="color:#aaa;">—</span>') + '</td>' +
-      '<td style="text-align:right;font-weight:bold;color:' + (sumaZi > 0 ? '#16A085' : '#aaa') + ';">' +
-        (sumaZi > 0 ? fmtR(sumaZi) + ' RON' : '—') +
-      '</td>' +
-    '</tr>');
-  });
-
-  rows.push('<tr style="background:#f0f8f4;border-top:2px solid #16A085;">' +
-    '<td colspan="2" style="font-weight:bold;color:#1F3864;">TOTAL SĂPTĂMÂNĂ</td>' +
-    '<td style="text-align:right;font-weight:bold;color:#16A085;font-size:16px;">' +
-      fmtR(total) + ' RON' +
-    '</td>' +
-  '</tr>');
-
-  document.getElementById('r-sapt-table').innerHTML =
-    '<thead><tr>' +
-      '<th style="width:130px;">Zi</th>' +
-      '<th>Detalii</th>' +
-      '<th style="width:130px;text-align:right;">Sumă</th>' +
-    '</tr></thead><tbody>' + rows.join('') + '</tbody>';
+  rows.push('<tr style="background:#f0f8f4;border-top:2px solid #16A085;"><td colspan="2" style="font-weight:bold;">TOTAL SĂPTĂMÂNĂ</td><td style="text-align:right;font-weight:bold;color:#16A085;font-size:15px;">'+fmtR(total)+' RON</td></tr>');
+  document.getElementById('r-sapt-table').innerHTML='<thead><tr><th style="width:130px;">Zi</th><th>Detalii</th><th style="width:130px;text-align:right;">Sumă</th></tr></thead><tbody>'+rows.join('')+'</tbody>';
 }
-
-function renderLunar() {
-  document.getElementById('r-lunar-year').textContent = raportLunarYear;
-  var ch = getChitante();
-  var rows = [];
-  var totalAn = 0;
-  var luni = ['Ianuarie','Februarie','Martie','Aprilie','Mai','Iunie',
-               'Iulie','August','Septembrie','Octombrie','Noiembrie','Decembrie'];
-
-  for (var m = 0; m < 12; m++) {
-    var chitLuna = ch.filter(function(c) {
-      if (!c.data) return false;
-      var d = new Date(c.data);
-      return d.getFullYear() === raportLunarYear && d.getMonth() === m;
-    });
-    var suma = chitLuna.reduce(function(s, c) { return s + (parseFloat(c.suma)||0); }, 0);
-    totalAn += suma;
-    var isCurrentMonth = (new Date().getFullYear() === raportLunarYear && new Date().getMonth() === m);
-    rows.push('<tr' + (isCurrentMonth ? ' style="background:#e8f8f4;"' : '') + '>' +
-      '<td style="font-weight:' + (isCurrentMonth ? 'bold' : 'normal') + ';color:#1F3864;">' + luni[m] + '</td>' +
-      '<td style="text-align:center;color:#888;">' + chitLuna.length + '</td>' +
-      '<td style="text-align:right;font-weight:bold;color:' + (suma > 0 ? '#16A085' : '#aaa') + ';">' +
-        (suma > 0 ? fmtR(suma) + ' RON' : '—') +
-      '</td>' +
-    '</tr>');
+function renderL(){
+  document.getElementById('r-lunar-year').textContent=raportLunarYear;
+  var luni=['Ianuarie','Februarie','Martie','Aprilie','Mai','Iunie','Iulie','August','Septembrie','Octombrie','Noiembrie','Decembrie'];
+  var chitante=ch(),rows=[],totalAn=0,m=new Date().getMonth(),yr=new Date().getFullYear();
+  for(var i=0;i<12;i++){
+    var cL=chitante.filter(function(c){if(!c.data)return false;var d=new Date(c.data);return d.getFullYear()===raportLunarYear&&d.getMonth()===i;});
+    var s=cL.reduce(function(a,c){return a+(parseFloat(c.suma)||0);},0);totalAn+=s;
+    var cur=(raportLunarYear===yr&&i===m);
+    rows.push('<tr'+(cur?' style="background:#e8f8f4;"':'')+'><td style="font-weight:'+(cur?'bold':'normal')+';color:#1F3864;">'+luni[i]+'</td><td style="text-align:center;color:#888;">'+cL.length+'</td><td style="text-align:right;font-weight:bold;color:'+(s>0?'#16A085':'#aaa')+';">'+(s>0?fmtR(s)+' RON':'—')+'</td></tr>');
   }
-
-  rows.push('<tr style="background:#f0f8f4;border-top:2px solid #16A085;">' +
-    '<td style="font-weight:bold;color:#1F3864;">TOTAL ' + raportLunarYear + '</td>' +
-    '<td style="text-align:center;font-weight:bold;color:#888;">' +
-      ch.filter(function(c) { return c.data && new Date(c.data).getFullYear() === raportLunarYear; }).length +
-    '</td>' +
-    '<td style="text-align:right;font-weight:bold;color:#16A085;font-size:16px;">' +
-      fmtR(totalAn) + ' RON' +
-    '</td>' +
-  '</tr>');
-
-  document.getElementById('r-lunar-table').innerHTML =
-    '<thead><tr>' +
-      '<th>Lună</th>' +
-      '<th style="text-align:center;">Nr. chitanțe</th>' +
-      '<th style="text-align:right;width:150px;">Total încasat</th>' +
-    '</tr></thead><tbody>' + rows.join('') + '</tbody>';
+  rows.push('<tr style="background:#f0f8f4;border-top:2px solid #16A085;"><td style="font-weight:bold;">TOTAL '+raportLunarYear+'</td><td style="text-align:center;font-weight:bold;color:#888;">'+chitante.filter(function(c){return c.data&&new Date(c.data).getFullYear()===raportLunarYear;}).length+'</td><td style="text-align:right;font-weight:bold;color:#16A085;font-size:15px;">'+fmtR(totalAn)+' RON</td></tr>');
+  document.getElementById('r-lunar-table').innerHTML='<thead><tr><th>Lună</th><th style="text-align:center;">Nr. chitanțe</th><th style="text-align:right;width:150px;">Total încasat</th></tr></thead><tbody>'+rows.join('')+'</tbody>';
 }
-
-function renderAnual() {
-  var ch = getChitante();
-  var anCurent = new Date().getFullYear();
-  var ani = [];
-  for (var a = anCurent - 4; a <= anCurent; a++) { ani.push(a); }
-
-  var rows = [];
-  ani.forEach(function(an) {
-    var chitAn = ch.filter(function(c) {
-      return c.data && new Date(c.data).getFullYear() === an;
-    });
-    var suma = chitAn.reduce(function(s, c) { return s + (parseFloat(c.suma)||0); }, 0);
-    var isCurrent = (an === anCurent);
-    rows.push('<tr' + (isCurrent ? ' style="background:#e8f8f4;"' : '') + '>' +
-      '<td style="font-weight:bold;font-size:' + (isCurrent ? '15px' : '13px') + ';color:#1F3864;">' + an + '</td>' +
-      '<td style="text-align:center;color:#888;">' + chitAn.length + '</td>' +
-      '<td style="text-align:right;font-weight:bold;font-size:' + (isCurrent ? '15px' : '13px') + ';color:' + (suma > 0 ? '#16A085' : '#aaa') + ';">' +
-        (suma > 0 ? fmtR(suma) + ' RON' : '—') +
-      '</td>' +
-    '</tr>');
-  });
-
-  document.getElementById('r-anual-table').innerHTML =
-    '<thead><tr>' +
-      '<th>An</th>' +
-      '<th style="text-align:center;">Nr. chitanțe</th>' +
-      '<th style="text-align:right;width:150px;">Total încasat</th>' +
-    '</tr></thead><tbody>' + rows.join('') + '</tbody>';
+function renderA(){
+  var chitante=ch(),anC=new Date().getFullYear(),rows=[];
+  for(var a=anC-4;a<=anC;a++){
+    var cA=chitante.filter(function(c){return c.data&&new Date(c.data).getFullYear()===a;});
+    var s=cA.reduce(function(ac,c){return ac+(parseFloat(c.suma)||0);},0);
+    var cur=(a===anC);
+    rows.push('<tr'+(cur?' style="background:#e8f8f4;"':'')+'><td style="font-weight:bold;font-size:'+(cur?'15':'13')+'px;color:#1F3864;">'+a+'</td><td style="text-align:center;color:#888;">'+cA.length+'</td><td style="text-align:right;font-weight:bold;color:'+(s>0?'#16A085':'#aaa')+';">'+(s>0?fmtR(s)+' RON':'—')+'</td></tr>');
+  }
+  document.getElementById('r-anual-table').innerHTML='<thead><tr><th>An</th><th style="text-align:center;">Nr. chitanțe</th><th style="text-align:right;width:150px;">Total încasat</th></tr></thead><tbody>'+rows.join('')+'</tbody>';
 }
-
-window.exportRaportCSV = function() {
-  var ch = getChitante();
-  if (!ch.length) { if(typeof toast==='function') toast('err','⚠️ Nu există chitanțe de exportat!'); return; }
-  var lines = ['﻿Nr. Chitanță,Data,Client,Sumă (RON),Mod plată'];
-  ch.slice().sort(function(a,b){ return (a.data||'').localeCompare(b.data||''); }).forEach(function(c) {
-    lines.push([
-      '"'+(c.nr||'')+'"',
-      c.data||'',
-      '"'+(c.client||'')+'"',
-      (parseFloat(c.suma)||0).toFixed(2).replace('.',','),
-      '"'+(c.mod||'')+'"'
-    ].join(','));
-  });
-  var blob = new Blob([lines.join('\n')], {type:'text/csv;charset=utf-8;'});
-  var url = URL.createObjectURL(blob);
-  var a = document.createElement('a');
-  a.href = url;
-  a.download = 'Raport_Incasari_' + new Date().toISOString().slice(0,10) + '.csv';
-  document.body.appendChild(a); a.click(); document.body.removeChild(a);
-  URL.revokeObjectURL(url);
-  if(typeof toast==='function') toast('ok','📥 Raport CSV exportat!');
+window.exportRaportCSV=function(){
+  var chitante=ch();if(!chitante.length){if(typeof toast==='function')toast('err','⚠️ Nu există chitanțe!');return;}
+  var lines=['﻿Nr. Chitanță,Data,Client,Sumă (RON),Mod plată'];
+  chitante.slice().sort(function(a,b){return(a.data||'').localeCompare(b.data||'');}).forEach(function(c){lines.push(['"'+(c.nr||'')+'"',c.data||'','"'+(c.client||'')+'"',(parseFloat(c.suma)||0).toFixed(2).replace('.',','),'"'+(c.mod||'')+'"'].join(','));});
+  var blob=new Blob([lines.join('\n')],{type:'text/csv;charset=utf-8;'});
+  var url=URL.createObjectURL(blob);var a=document.createElement('a');a.href=url;a.download='Raport_Incasari_'+new Date().toISOString().slice(0,10)+'.csv';
+  document.body.appendChild(a);a.click();document.body.removeChild(a);URL.revokeObjectURL(url);
+  if(typeof toast==='function')toast('ok','📥 Raport CSV exportat!');
 };
-
 })();
 
 function exportArhivaForCabinete(){
@@ -7678,76 +7528,45 @@ function exportArhivaForCabinete(){
 </script>
 <!-- MODAL RAPOARTE ÎNCASĂRI -->
 <div id="m-rapoarte" class="overlay" onclick="if(event.target===this)closeRapoarteIncasari()">
-  <div class="modal wide" style="font-family:'DM Sans',sans-serif;">
+  <div class="modal wide">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
-      <div>
-        <div style="font-size:20px;font-weight:bold;color:#1F3864;">📊 Rapoarte Încasări</div>
-        <div style="font-size:12px;color:#888;">SCA Popescu și Asociații</div>
-      </div>
-      <button onclick="closeRapoarteIncasari()" style="background:none;border:none;font-size:22px;cursor:pointer;color:#888;">✕</button>
+      <div><div style="font-size:18px;font-weight:bold;color:#0D2240;">📊 Rapoarte Încasări</div><div style="font-size:11px;color:#9AAAB8;">SCA Popescu și Asociații</div></div>
+      <button onclick="closeRapoarteIncasari()" style="background:none;border:none;font-size:22px;cursor:pointer;color:#9AAAB8;">✕</button>
     </div>
-
-    <!-- Tabs -->
-    <div style="display:flex;gap:8px;margin-bottom:18px;border-bottom:2px solid #e0e0e0;padding-bottom:0;">
-      <button id="rtab-saptamanal" class="active" onclick="switchRaportTab('saptamanal')"
-        style="padding:8px 18px;border:none;border-bottom:3px solid transparent;background:none;cursor:pointer;font-family:'Times New Roman',serif;font-size:14px;font-weight:bold;color:#1F3864;transition:all .2s;"
-        onmouseover="this.style.background='#f0f4fa'" onmouseout="this.style.background='none'">
-        📅 Săptămânal
-      </button>
-      <button id="rtab-lunar" onclick="switchRaportTab('lunar')"
-        style="padding:8px 18px;border:none;border-bottom:3px solid transparent;background:none;cursor:pointer;font-family:'Times New Roman',serif;font-size:14px;font-weight:bold;color:#1F3864;transition:all .2s;"
-        onmouseover="this.style.background='#f0f4fa'" onmouseout="this.style.background='none'">
-        🗓️ Lunar
-      </button>
-      <button id="rtab-anual" onclick="switchRaportTab('anual')"
-        style="padding:8px 18px;border:none;border-bottom:3px solid transparent;background:none;cursor:pointer;font-family:'Times New Roman',serif;font-size:14px;font-weight:bold;color:#1F3864;transition:all .2s;"
-        onmouseover="this.style.background='#f0f4fa'" onmouseout="this.style.background='none'">
-        📆 Anual
-      </button>
+    <div style="display:flex;gap:8px;margin-bottom:18px;border-bottom:2px solid #E8ECF0;padding-bottom:0;align-items:center;">
+      <button id="rtab-saptamanal" onclick="switchRaportTab('saptamanal')" style="padding:8px 16px;border:none;border-bottom:3px solid transparent;background:none;cursor:pointer;font-family:'DM Sans',sans-serif;font-size:13px;font-weight:700;color:#0D2240;">📅 Săptămânal</button>
+      <button id="rtab-lunar" onclick="switchRaportTab('lunar')" style="padding:8px 16px;border:none;border-bottom:3px solid transparent;background:none;cursor:pointer;font-family:'DM Sans',sans-serif;font-size:13px;font-weight:700;color:#0D2240;">🗓️ Lunar</button>
+      <button id="rtab-anual" onclick="switchRaportTab('anual')" style="padding:8px 16px;border:none;border-bottom:3px solid transparent;background:none;cursor:pointer;font-family:'DM Sans',sans-serif;font-size:13px;font-weight:700;color:#0D2240;">📆 Anual</button>
       <div style="flex:1;"></div>
-      <button onclick="exportRaportCSV()"
-        style="padding:7px 14px;background:#1F3864;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:12px;font-family:'Times New Roman',serif;align-self:center;">
-        ⬇️ Export CSV
-      </button>
+      <button onclick="exportRaportCSV()" style="padding:6px 14px;background:#0D2240;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:12px;">⬇️ Export CSV</button>
     </div>
-
-    <!-- Săptămânal -->
     <div id="r-saptamanal">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
-        <button onclick="raportWeekNav(-1)" style="padding:5px 12px;border:1px solid #ccc;background:#f8f8f8;border-radius:5px;cursor:pointer;font-size:14px;">‹</button>
-        <span id="r-sapt-period" style="font-weight:bold;color:#1F3864;font-size:14px;"></span>
-        <button onclick="raportWeekNav(1)" style="padding:5px 12px;border:1px solid #ccc;background:#f8f8f8;border-radius:5px;cursor:pointer;font-size:14px;">›</button>
+        <button onclick="raportWeekNav(-1)" style="padding:5px 12px;border:1px solid #E8ECF0;background:#F5F7FA;border-radius:5px;cursor:pointer;">‹</button>
+        <span id="r-sapt-period" style="font-weight:bold;color:#0D2240;font-size:13px;"></span>
+        <button onclick="raportWeekNav(1)" style="padding:5px 12px;border:1px solid #E8ECF0;background:#F5F7FA;border-radius:5px;cursor:pointer;">›</button>
       </div>
-      <table id="r-sapt-table" style="width:100%;border-collapse:collapse;font-family:'Times New Roman',serif;font-size:13px;">
-      </table>
+      <table id="r-sapt-table" style="width:100%;border-collapse:collapse;font-size:12px;"></table>
     </div>
-
-    <!-- Lunar -->
     <div id="r-lunar" style="display:none;">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
-        <button onclick="raportLunarYearNav(-1)" style="padding:5px 12px;border:1px solid #ccc;background:#f8f8f8;border-radius:5px;cursor:pointer;font-size:14px;">‹</button>
-        <span id="r-lunar-year" style="font-weight:bold;color:#1F3864;font-size:16px;"></span>
-        <button onclick="raportLunarYearNav(1)" style="padding:5px 12px;border:1px solid #ccc;background:#f8f8f8;border-radius:5px;cursor:pointer;font-size:14px;">›</button>
+        <button onclick="raportLunarYearNav(-1)" style="padding:5px 12px;border:1px solid #E8ECF0;background:#F5F7FA;border-radius:5px;cursor:pointer;">‹</button>
+        <span id="r-lunar-year" style="font-weight:bold;color:#0D2240;font-size:16px;"></span>
+        <button onclick="raportLunarYearNav(1)" style="padding:5px 12px;border:1px solid #E8ECF0;background:#F5F7FA;border-radius:5px;cursor:pointer;">›</button>
       </div>
-      <table id="r-lunar-table" style="width:100%;border-collapse:collapse;font-family:'Times New Roman',serif;font-size:13px;">
-      </table>
+      <table id="r-lunar-table" style="width:100%;border-collapse:collapse;font-size:12px;"></table>
     </div>
-
-    <!-- Anual -->
     <div id="r-anual" style="display:none;">
-      <div style="margin-bottom:12px;font-size:13px;color:#888;">Ultimii 5 ani</div>
-      <table id="r-anual-table" style="width:100%;border-collapse:collapse;font-family:'Times New Roman',serif;font-size:13px;">
-      </table>
+      <div style="margin-bottom:10px;font-size:12px;color:#9AAAB8;">Ultimii 5 ani</div>
+      <table id="r-anual-table" style="width:100%;border-collapse:collapse;font-size:12px;"></table>
     </div>
   </div>
 </div>
-
 <style>
-#m-rapoarte table th { background:var(--navy); color:#fff; padding:8px 10px; text-align:left; font-weight:bold; font-size:11px; }
-#m-rapoarte table td { padding:7px 10px; border-bottom:1px solid #f0f0f0; vertical-align:top; font-size:12px; }
-#m-rapoarte table tr:hover td { background:#f0f5fb; }
-#rtab-saptamanal.active, #rtab-lunar.active, #rtab-anual.active { border-bottom:3px solid #16A085 !important; color:#16A085 !important; }
+#m-rapoarte table th{background:#0D2240;color:#fff;padding:8px 10px;text-align:left;font-size:11px;font-weight:600;}
+#m-rapoarte table td{padding:7px 10px;border-bottom:1px solid #F5F7FA;vertical-align:top;}
+#m-rapoarte table tr:hover td{background:#f0f5fb;}
+#rtab-saptamanal.active,#rtab-lunar.active,#rtab-anual.active{border-bottom:3px solid #16A085!important;color:#16A085!important;}
 </style>
-
 </body>
 </html>
