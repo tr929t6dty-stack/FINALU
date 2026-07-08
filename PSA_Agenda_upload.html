@@ -706,7 +706,14 @@ body.dark .toast-msg{background:#1a2d5a;}
     </div>
     <div class="form-row" id="apptRepeatUntilRow" style="display:none">
       <label class="form-label">Repetă până la</label>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">
+        <button type="button" class="btn-secondary" style="padding:6px 11px;font-size:11px" onclick="setRepeatUntilPreset(6)">+6 luni</button>
+        <button type="button" class="btn-secondary" style="padding:6px 11px;font-size:11px" onclick="setRepeatUntilPreset(12)">+1 an</button>
+        <button type="button" class="btn-secondary" style="padding:6px 11px;font-size:11px" onclick="setRepeatUntilPreset(24)">+2 ani</button>
+        <button type="button" class="btn-secondary" style="padding:6px 11px;font-size:11px" onclick="setRepeatUntilPreset(36)">+3 ani</button>
+      </div>
       <input type="date" class="form-input" id="apptRepeatUntil">
+      <div style="font-size:11px;color:var(--steel-light);margin-top:5px">Recomandat: folosește un buton de mai sus — calendarul nativ de mai jos poate "sări" data la ani îndepărtați.</div>
     </div>
     <div class="form-row" id="apptSeriesInfoRow" style="display:none">
       <div style="background:var(--gold-pale);border:1.5px solid var(--gold);border-radius:var(--radius-md);padding:10px 14px;font-size:12px;color:var(--ink);line-height:1.5" id="apptSeriesInfo"></div>
@@ -1506,6 +1513,17 @@ function setApptMode(mode){
 function toggleRepeatUntil(){
   const v=document.getElementById('apptRepeat').value;
   document.getElementById('apptRepeatUntilRow').style.display=v?'':'none';
+}
+// Setează direct valoarea câmpului "Repetă până la", calculată din data
+// programării de bază + N luni — ocolește complet calendarul nativ (care
+// pe Safari poate "sări" data înapoi la cea curentă atunci când navighezi
+// mulți ani înainte).
+function setRepeatUntilPreset(months){
+  const baseStr=document.getElementById('apptDate').value;
+  const base=baseStr?new Date(baseStr+'T00:00:00'):new Date();
+  base.setMonth(base.getMonth()+months);
+  document.getElementById('apptRepeatUntil').value=toLocalDateStr(base);
+  toast(`Repetă până la ${toLocalDateStr(base)} ✓`,0,1);
 }
 
 function openApptModal(id,date,time,clientId){
