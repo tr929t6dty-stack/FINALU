@@ -692,7 +692,24 @@ body.dark .toast-msg{background:#1a2d5a;}
         <option value="confirmed">✅ Confirmat</option><option value="pending">⏳ În așteptare</option><option value="cancelled">❌ Anulat</option>
       </select>
     </div>
+    <div class="form-row" id="apptRepeatRow">
+      <label class="form-label">Repetă</label>
+      <select class="form-select" id="apptRepeat" onchange="toggleRepeatUntil()">
+        <option value="">Nu se repetă</option>
+        <option value="daily">Zilnic</option>
+        <option value="weekdays">În fiecare zi lucrătoare (Luni–Vineri)</option>
+        <option value="weekly">Săptămânal</option>
+        <option value="biweekly">La 2 săptămâni</option>
+        <option value="monthly">Lunar (aceeași dată)</option>
+        <option value="yearly">Anual (ex: aniversare)</option>
+      </select>
+    </div>
+    <div class="form-row" id="apptRepeatUntilRow" style="display:none">
+      <label class="form-label">Repetă până la</label>
+      <input type="date" class="form-input" id="apptRepeatUntil">
+    </div>
     <div class="modal-actions">
+      <button class="btn-danger" id="btn-delete-series" onclick="delApptSeries()" style="margin-right:auto;display:none">🗑 Șterge toată seria</button>
       <button class="btn-secondary" onclick="closeModal('apptModal')">Anulează</button>
       <button class="btn-primary" onclick="saveAppt()">💾 Salvează</button>
     </div>
@@ -1483,10 +1500,18 @@ function setApptMode(mode){
   document.getElementById('apptClientRow').style.display=mode==='client'?'':'none';
   document.getElementById('apptTitleRow').style.display=mode==='own'?'':'none';
 }
+function toggleRepeatUntil(){
+  const v=document.getElementById('apptRepeat').value;
+  document.getElementById('apptRepeatUntilRow').style.display=v?'':'none';
+}
+
 function openApptModal(id,date,time,clientId){
   editId=id||null;
   document.getElementById('apptModalTitle').textContent=id?'Editează Programare':'Programare Nouă';
   document.getElementById('apptClient').innerHTML=`<option value="">— Selectează client —</option>`+clients.map(c=>`<option value="${c.id}" ${(clientId&&c.id===clientId)||(id&&c.id===(appointments.find(a=>a.id===id)?.clientId))?'selected':''}>${c.name}</option>`).join('');
+  document.getElementById('apptRepeat').value='';
+  document.getElementById('apptRepeatUntil').value='';
+  toggleRepeatUntil();
   if(id){
     const a=appointments.find(ap=>ap.id===id);if(!a)return;
     // Detectează dacă e programare proprie (fără client)
@@ -1499,6 +1524,12 @@ function openApptModal(id,date,time,clientId){
     document.getElementById('apptType').value=a.type;
     document.getElementById('apptNotes').value=a.notes||'';
     document.getElementById('apptStatus').value=a.status;
+    // La editarea unei programări existente, "Repetă" nu se mai aplică
+    // (se editează doar această apariție) — arată în schimb opțiunea
+    // de a șterge toată seria, dacă face parte dintr-una.
+    document.getElementById('apptRepeatRow').style.display='none';
+    document.getElementById('apptRepeatUntilRow').style.display='none';
+    document.getElementById('btn-delete-series').style.display=a.recurringId?'':'none';
   }else{
     setApptMode(clientId?'client':'client');
     document.getElementById('apptTitle').value='';
@@ -1508,8 +1539,37 @@ function openApptModal(id,date,time,clientId){
     document.getElementById('apptType').value='civil';
     document.getElementById('apptNotes').value='';
     document.getElementById('apptStatus').value='confirmed';
+    document.getElementById('apptRepeatRow').style.display='';
+    document.getElementById('btn-delete-series').style.display='none';
   }
   openModal('apptModal');
+}
+
+// Generează datele viitoare (YYYY-MM-DD) pentru o programare repetabilă,
+// pornind de la ziua de bază, până la data limită inclusiv. Plafon de
+// siguranță la 208 apariții (~4 ani săptămânal), ca să nu creăm din greșeală
+// mii de programări dacă cineva pune o dată limită foarte îndepărtată.
+function generateRecurringDates(baseDateStr,repeat,untilStr){
+  const out=[];
+  if(!repeat||!untilStr)return out;
+  const base=new Date(baseDateStr+'T00:00:00');
+  const until=new Date(untilStr+'T00:00:00');
+  if(until<=base)return out;
+  let d=new Date(base);
+  const MAX=366;
+  while(out.length<MAX){
+    if(repeat==='daily')d.setDate(d.getDate()+1);
+    else if(repeat==='weekdays')d.setDate(d.getDate()+1);
+    else if(repeat==='weekly')d.setDate(d.getDate()+7);
+    else if(repeat==='biweekly')d.setDate(d.getDate()+14);
+    else if(repeat==='monthly')d.setMonth(d.getMonth()+1);
+    else if(repeat==='yearly')d.setFullYear(d.getFullYear()+1);
+    else break;
+    if(d>until)break;
+    if(repeat==='weekdays'&&(d.getDay()===0||d.getDay()===6))continue; // sari sâmbăta/duminica
+    out.push(toLocalDateStr(d));
+  }
+  return out;
 }
 
 async function saveAppt(){
@@ -1521,15 +1581,38 @@ async function saveAppt(){
   if(isOwn&&!title){toast('Introduceți denumirea programării.',1);return;}
   if(!isOwn&&!cId){toast('Selectați un client.',1);return;}
   if(!date||!time){toast('Completează data și ora.',1);return;}
-  const a={id:editId||'a'+Date.now(),clientId:isOwn?'own':cId,title:isOwn?title:'',date,time,
+  const base={clientId:isOwn?'own':cId,title:isOwn?title:'',date,time,
     duration:parseInt(document.getElementById('apptDur').value),
     type:document.getElementById('apptType').value,
     notes:document.getElementById('apptNotes').value,
     status:document.getElementById('apptStatus').value};
-  if(editId){appointments[appointments.findIndex(x=>x.id===editId)]=a;toast('Actualizat ✓',0,1);}
-  else{appointments.push(a);toast('Programare adăugată ✓',0,1);}
+  const repeat=editId?'':document.getElementById('apptRepeat').value;
+  const repeatUntil=document.getElementById('apptRepeatUntil').value;
+  const newOnes=[];
+  if(editId){
+    const a={...base,id:editId};
+    appointments[appointments.findIndex(x=>x.id===editId)]=a;
+    newOnes.push(a);
+    toast('Actualizat ✓',0,1);
+  }else if(repeat&&repeatUntil){
+    // Programare repetabilă: creăm apariția de bază + toate cele viitoare,
+    // toate legate printr-un recurringId comun (util la ștergerea seriei).
+    const recurringId='r'+Date.now();
+    const a0={...base,id:'a'+Date.now(),recurringId};
+    appointments.push(a0);newOnes.push(a0);
+    const extraDates=generateRecurringDates(date,repeat,repeatUntil);
+    extraDates.forEach((d,i)=>{
+      const ai={...base,id:'a'+Date.now()+'_'+i,date:d,recurringId};
+      appointments.push(ai);newOnes.push(ai);
+    });
+    toast(`Programare repetabilă adăugată — ${newOnes.length} apariții ✓`,0,1);
+  }else{
+    const a={...base,id:'a'+Date.now()};
+    appointments.push(a);newOnes.push(a);
+    toast('Programare adăugată ✓',0,1);
+  }
   save(K.AP,appointments);
-  if(sb){try{await sb.from('psa_appointments').upsert({id:a.id,data:a,updated_at:new Date().toISOString()});}catch(e){}}
+  if(sb){for(const a of newOnes){try{await sb.from('psa_appointments').upsert({id:a.id,data:a,updated_at:new Date().toISOString()});}catch(e){}}}
   closeModal('apptModal');render();
 }
 
@@ -1538,6 +1621,19 @@ function delAppt(id){
   appointments=appointments.filter(a=>a.id!==id);save(K.AP,appointments);
   if(sb){sb.from('psa_appointments').delete().eq('id',id).then(()=>{});}
   toast('Programare ștearsă');render();
+}
+
+function delApptSeries(){
+  const a=appointments.find(ap=>ap.id===editId);
+  if(!a||!a.recurringId)return;
+  const rid=a.recurringId;
+  const toDelete=appointments.filter(ap=>ap.recurringId===rid);
+  if(!confirm(`Ștergi toate cele ${toDelete.length} apariții din această serie repetabilă?`))return;
+  appointments=appointments.filter(ap=>ap.recurringId!==rid);
+  save(K.AP,appointments);
+  if(sb){toDelete.forEach(ap=>{sb.from('psa_appointments').delete().eq('id',ap.id).then(()=>{});});}
+  toast('Serie ștearsă');
+  closeModal('apptModal');render();
 }
 
 function delClient(id){
