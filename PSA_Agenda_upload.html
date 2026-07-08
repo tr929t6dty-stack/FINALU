@@ -708,6 +708,9 @@ body.dark .toast-msg{background:#1a2d5a;}
       <label class="form-label">Repetă până la</label>
       <input type="date" class="form-input" id="apptRepeatUntil">
     </div>
+    <div class="form-row" id="apptSeriesInfoRow" style="display:none">
+      <div style="background:var(--gold-pale);border:1.5px solid var(--gold);border-radius:var(--radius-md);padding:10px 14px;font-size:12px;color:var(--ink);line-height:1.5" id="apptSeriesInfo"></div>
+    </div>
     <div class="modal-actions">
       <button class="btn-danger" id="btn-delete-series" onclick="delApptSeries()" style="margin-right:auto;display:none">🗑 Șterge toată seria</button>
       <button class="btn-secondary" onclick="closeModal('apptModal')">Anulează</button>
@@ -1530,7 +1533,16 @@ function openApptModal(id,date,time,clientId){
     document.getElementById('apptRepeatRow').style.display='none';
     document.getElementById('apptRepeatUntilRow').style.display='none';
     document.getElementById('btn-delete-series').style.display=a.recurringId?'':'none';
+    if(a.recurringId){
+      const seria=appointments.filter(ap=>ap.recurringId===a.recurringId).map(ap=>ap.date).sort();
+      const prima=seria[0], ultima=seria[seria.length-1];
+      document.getElementById('apptSeriesInfo').innerHTML=`🔁 Parte dintr-o serie repetabilă — <b>${seria.length} apariții</b>, de la <b>${prima}</b> până la <b>${ultima}</b>.`;
+      document.getElementById('apptSeriesInfoRow').style.display='';
+    }else{
+      document.getElementById('apptSeriesInfoRow').style.display='none';
+    }
   }else{
+    document.getElementById('apptSeriesInfoRow').style.display='none';
     setApptMode(clientId?'client':'client');
     document.getElementById('apptTitle').value='';
     document.getElementById('apptDate').value=date||toLocalDateStr(new Date());
@@ -1556,7 +1568,7 @@ function generateRecurringDates(baseDateStr,repeat,untilStr){
   const until=new Date(untilStr+'T00:00:00');
   if(until<=base)return out;
   let d=new Date(base);
-  const MAX=366;
+  const MAX=1500; // acoperă în siguranță câțiva ani, inclusiv repetare zilnică
   while(out.length<MAX){
     if(repeat==='daily')d.setDate(d.getDate()+1);
     else if(repeat==='weekdays')d.setDate(d.getDate()+1);
